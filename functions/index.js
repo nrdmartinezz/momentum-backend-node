@@ -1,6 +1,12 @@
 const functions = require("firebase-functions");
 const express = require("express");
+const usersRoutes = require("./api/Users");
+
 const app = express();
+app.use(express.json());
+
+// Register user routes
+app.use("/users", usersRoutes);
 
 // Define your API routes
 app.get("/", (req, res) => {
