@@ -120,7 +120,14 @@ router.delete("/delete_user", authenticateToken, async (req, res) => {
     const { userId } = req.body;
     if (!userId) return res.status(400).json({ error: "User ID required" });
 
-    res.json({ message: "User deleted successfully" });
+    const result = await firestore.collection("users").doc(userId).delete();
+
+    if (result) {
+      res.json({ message: "User deleted successfully" });
+    } else {
+      res.status(404).json({ error: "User not found" });
+    }
+    
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to delete user" });

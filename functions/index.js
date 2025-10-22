@@ -18,12 +18,12 @@ const usersRoutes = require("./api/Users");
 app.use("/users", usersRoutes);
 
 // Register chore routes
-// const choresRoutes = require("./api/Chores");
-// app.use("/chores", choresRoutes);
+const choresRoutes = require("./api/Chores");
+app.use("/chores", choresRoutes);
 
 // Register task routes
-// const tasksRoutes = require("./api/Tasks");
-// app.use("/tasks", tasksRoutes);
+const tasksRoutes = require("./api/Tasks");
+app.use("/tasks", tasksRoutes);
 
 // Define your API routes
 app.get("/", (req, res) => {
