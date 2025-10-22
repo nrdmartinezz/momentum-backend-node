@@ -1,5 +1,5 @@
 {
-  "functions": [
+  "functions": 
     {
       "source": "functions",
       "codebase": "default",
@@ -11,5 +11,4 @@
         "*.local"
       ]
     }
-  ]
 }
