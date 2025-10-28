@@ -20,7 +20,7 @@ router.post("/", authenticateToken, async (req, res) => {
     status: status || "",
     due_date,
   });
-
+  
   if (result.id) {
     res.status(201).json({ message: "Task created", taskId: result.id });
   } else {
