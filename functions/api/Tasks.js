@@ -17,7 +17,7 @@ router.post("/", authenticateToken, async (req, res) => {
     user_id,
     title,
     description,
-    status,
+    status: status || "",
     due_date,
   });
 

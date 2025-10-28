@@ -156,7 +156,6 @@ router.get("/get_user_settings", authenticateToken, async (req, res) => {
     let settingsSnapshot = await docRef.get();
     if (!settingsSnapshot.exists) {
       const defaults = {
-        theme_id: "default",
         pomodoro_duration: 25,
         short_break_duration: 5,
         long_break_duration: 15,
@@ -175,11 +174,11 @@ router.get("/get_user_settings", authenticateToken, async (req, res) => {
 });
 
 // 🔹 Update User Settings (protected)
-router.put("/update_user_settings", authenticateToken, async (req, res) => {
+router.post("/update_user_settings", authenticateToken, async (req, res) => {
   try {
     const {
       userId: bodyUserId,
-      theme_id,
+      
       pomodoro_duration,
       short_break_duration,
       long_break_duration,
@@ -189,7 +188,7 @@ router.put("/update_user_settings", authenticateToken, async (req, res) => {
 
     await firestore.collection("user_settings").doc(userId).set(
       {
-        theme_id,
+  
         pomodoro_duration,
         short_break_duration,
         long_break_duration,

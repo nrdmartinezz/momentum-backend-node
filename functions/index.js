@@ -25,6 +25,10 @@ app.use("/chores", choresRoutes);
 const tasksRoutes = require("./api/tasks.js");
 app.use("/tasks", tasksRoutes);
 
+// Register theme routes
+const themeRoutes = require("./api/theme.js");
+app.use("/themes", themeRoutes);
+
 // Define your API routes
 app.get("/", (req, res) => {
   res.send("Hello from Express on Firebase Functions!");
