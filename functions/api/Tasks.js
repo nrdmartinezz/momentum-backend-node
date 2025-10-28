@@ -1,4 +1,4 @@
-const firestore = require("../data/firebase");
+const firestore = require("../data/firestore");
 const express = require("express");
 
 const authenticateToken = require("../middleware/authentication");
@@ -7,7 +7,7 @@ require("dotenv").config();
 const router = express.Router();
 
 // CREATE Task
-router.post("/", async (req, res) => {
+router.post("/", authenticateToken, async (req, res) => {
   const { user_id, title, description, status, due_date } = req.body;
   if (!user_id || !title) {
     return res.status(400).json({ error: "Missing required fields" });

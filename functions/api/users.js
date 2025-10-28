@@ -45,26 +45,38 @@ router.post("/signup", async (req, res) => {
       updated_at: new Date(),
     });
 
-    if (result.id) {
-      const userSettings = await firestore
-        .collection("user_settings")
-        .doc(result.id)
-        .set({
+    if (!result.id) {
+      return res.status(500).json({ error: "Signup failed" });
+    }
+
+    // Create default settings document (idempotent)
+    await firestore
+      .collection("user_settings")
+      .doc(result.id)
+      .set(
+        {
           theme_id: "default",
           pomodoro_duration: 25,
           short_break_duration: 5,
           long_break_duration: 15,
-        });
-
-      const token = await signAsync(
-        { userId: userDoc.id, email: user.email },
-        process.env.JWT_SECRET,
-        { expiresIn: "1d" }
+          created_at: new Date(),
+          updated_at: new Date(),
+        },
+        { merge: true }
       );
-      res.status(201).json({ message: "User created", userSettings, token });
-    } else {
-      res.status(500).json({ error: "Signup failed" });
+
+    if (!process.env.JWT_SECRET) {
+      return res
+        .status(500)
+        .json({ error: "Server misconfiguration: JWT secret missing" });
     }
+
+    const token = await signAsync(
+      { userId: result.id, email },
+      process.env.JWT_SECRET,
+      { expiresIn: "1d" }
+    );
+    res.status(201).json({ message: "User created", userId: result.id, email, token });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Signup failed" });
@@ -107,7 +119,7 @@ router.post("/login", async (req, res) => {
       { expiresIn: "1d" }
     );
 
-    res.json({ message: "Login successful", token });
+    res.json({ message: "Login successful", token, userId: userDoc.id });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Login failed" });
@@ -127,33 +139,32 @@ router.delete("/delete_user", authenticateToken, async (req, res) => {
     } else {
       res.status(404).json({ error: "User not found" });
     }
-    
+
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to delete user" });
   }
 });
 
-// 🔹 Get User Settings
-router.get("/get_user_settings", async (req, res) => {
+// 🔹 Get User Settings (protected)
+router.get("/get_user_settings", authenticateToken, async (req, res) => {
   try {
-    const { userId } = req.body;
+    const userId = req.user?.userId || req.query.userId;
     if (!userId) return res.status(400).json({ error: "User ID required" });
 
-    let settingsSnapshot = await firestore
-      .collection("user_settings")
-      .doc(userId)
-      .get();
+    const docRef = firestore.collection("user_settings").doc(userId);
+    let settingsSnapshot = await docRef.get();
     if (!settingsSnapshot.exists) {
-      settingsSnapshot = await firestore
-        .collection("user_settings")
-        .doc(userId)
-        .set({
-          theme_id: "default",
-          pomodoro_duration: 25,
-          short_break_duration: 5,
-          long_break_duration: 15,
-        });
+      const defaults = {
+        theme_id: "default",
+        pomodoro_duration: 25,
+        short_break_duration: 5,
+        long_break_duration: 15,
+        created_at: new Date(),
+        updated_at: new Date(),
+      };
+      await docRef.set(defaults, { merge: true });
+      return res.json(defaults);
     }
 
     res.json(settingsSnapshot.data());
@@ -167,12 +178,13 @@ router.get("/get_user_settings", async (req, res) => {
 router.put("/update_user_settings", authenticateToken, async (req, res) => {
   try {
     const {
-      userId,
+      userId: bodyUserId,
       theme_id,
       pomodoro_duration,
       short_break_duration,
       long_break_duration,
     } = req.body;
+    const userId = bodyUserId || req.user?.userId;
     if (!userId) return res.status(400).json({ error: "User ID required" });
 
     await firestore.collection("user_settings").doc(userId).set(
