@@ -14,15 +14,15 @@ app.use(express.json());
 app.use(cors({ origin: true }));
 
 // Register user routes
-const usersRoutes = require("./api/Users");
+const usersRoutes = require("./api/users");
 app.use("/users", usersRoutes);
 
 // Register chore routes
-const choresRoutes = require("./api/Chores");
+const choresRoutes = require("./api/chores");
 app.use("/chores", choresRoutes);
 
 // Register task routes
-const tasksRoutes = require("./api/Tasks");
+const tasksRoutes = require("./api/tasks");
 app.use("/tasks", tasksRoutes);
 
 // Define your API routes
