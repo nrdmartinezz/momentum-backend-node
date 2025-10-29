@@ -50,20 +50,17 @@ router.post("/signup", async (req, res) => {
     }
 
     // Create default settings document (idempotent)
-    await firestore
-      .collection("user_settings")
-      .doc(result.id)
-      .set(
-        {
-          theme_id: "default",
-          pomodoro_duration: 25,
-          short_break_duration: 5,
-          long_break_duration: 15,
-          created_at: new Date(),
-          updated_at: new Date(),
-        },
-        { merge: true }
-      );
+    await firestore.collection("user_settings").doc(result.id).set(
+      {
+        theme_id: "default",
+        pomodoro_duration: 25,
+        short_break_duration: 5,
+        long_break_duration: 15,
+        created_at: new Date(),
+        updated_at: new Date(),
+      },
+      { merge: true }
+    );
 
     if (!process.env.JWT_SECRET) {
       return res
@@ -76,7 +73,9 @@ router.post("/signup", async (req, res) => {
       process.env.JWT_SECRET,
       { expiresIn: "1d" }
     );
-    res.status(201).json({ message: "User created", userId: result.id, email, token });
+    res
+      .status(201)
+      .json({ message: "User created", userId: result.id, email, token });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Signup failed" });
@@ -119,7 +118,12 @@ router.post("/login", async (req, res) => {
       { expiresIn: "1d" }
     );
 
-    res.json({ message: "Login successful", token, userId: userDoc.id });
+    res.json({
+      message: "Login successful",
+      token,
+      userId: userDoc.id,
+      name: user.name,
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Login failed" });
@@ -139,7 +143,6 @@ router.delete("/delete_user", authenticateToken, async (req, res) => {
     } else {
       res.status(404).json({ error: "User not found" });
     }
-
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to delete user" });
@@ -178,7 +181,7 @@ router.post("/update_user_settings", authenticateToken, async (req, res) => {
   try {
     const {
       userId: bodyUserId,
-      
+
       pomodoro_duration,
       short_break_duration,
       long_break_duration,
@@ -188,7 +191,6 @@ router.post("/update_user_settings", authenticateToken, async (req, res) => {
 
     await firestore.collection("user_settings").doc(userId).set(
       {
-  
         pomodoro_duration,
         short_break_duration,
         long_break_duration,
