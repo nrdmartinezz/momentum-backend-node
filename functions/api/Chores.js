@@ -7,31 +7,42 @@ require("dotenv").config();
 const router = express.Router();
 
 // CREATE Chore
-router.post("/", async (req, res) => {
-  const { user_id, name, description, status, due_date } = req.body;
-  if (!user_id || !name) {
-    return res.status(400).json({ error: "Missing required fields" });
-  }
-  const result = await firestore.collection("chores").add({
-    user_id,
-    name,
-    description,
-    status,
-    due_date,
-  });
-  if (result.id) {
-    res.status(201).json({ message: "Chore created", choreId: result.id });
-  } else {
-    res.status(500).json({ error: "Chore creation failed" });
+router.post("/", authenticateToken, async (req, res) => {
+  try {
+    const user_id = req.user?.userId;
+    const { name, description, status, due_date } = req.body;
+    
+    if (!user_id || !name) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+    
+    const result = await firestore.collection("chores").add({
+      user_id,
+      name,
+      description,
+      status: status || "pending",
+      due_date,
+      created_at: new Date(),
+      updated_at: new Date(),
+    });
+    
+    if (result.id) {
+      res.status(201).json({ message: "Chore created", choreId: result.id });
+    } else {
+      res.status(500).json({ error: "Chore creation failed" });
+    }
+  } catch (error) {
+    console.error("Error creating chore:", error);
+    res.status(500).json({ error: "Failed to create chore" });
   }
 });
 
 // READ All Chores for a User
-router.get("/", async (req, res) => {
-  const { user_id } = req.query;
-  if (!user_id) return res.status(400).json({ error: "User ID required" });
-
+router.get("/", authenticateToken, async (req, res) => {
   try {
+    const user_id = req.user?.userId;
+    if (!user_id) return res.status(400).json({ error: "User ID required" });
+
     const snapshot = await firestore
       .collection("chores")
       .where("user_id", "==", user_id)
@@ -55,14 +66,23 @@ router.get("/", async (req, res) => {
     
 
 // READ Single Chore by ID
-router.get("/:id", async (req, res) => {
+router.get("/:id", authenticateToken, async (req, res) => {
   const { id } = req.params;
+  const user_id = req.user?.userId;
+  
   try {
     const doc = await firestore.collection("chores").doc(id).get(); 
     if (!doc.exists) {
       return res.status(404).json({ error: "Chore not found" });
     }
-    res.json({ id: doc.id, ...doc.data() });
+    
+    // Verify the chore belongs to the authenticated user
+    const choreData = doc.data();
+    if (choreData.user_id !== user_id) {
+      return res.status(403).json({ error: "Unauthorized access to chore" });
+    }
+    
+    res.json({ id: doc.id, ...choreData });
   } catch (error) {
     console.error("Error fetching chore:", error);
     res.status(500).json({ error: "Failed to fetch chore" });
@@ -72,12 +92,18 @@ router.get("/:id", async (req, res) => {
 // UPDATE Chore (protected)
 router.put("/:id", authenticateToken, async (req, res) => {
   const { id } = req.params;
+  const user_id = req.user?.userId;
   const { name, description, status, due_date } = req.body;
 
   try {
     const doc = await firestore.collection("chores").doc(id).get();
     if (!doc.exists) {
       return res.status(404).json({ error: "Chore not found" });
+    }
+    
+    // Verify the chore belongs to the authenticated user
+    if (doc.data().user_id !== user_id) {
+      return res.status(403).json({ error: "Unauthorized access to chore" });
     }
 
     await firestore.collection("chores").doc(id).update({
@@ -98,11 +124,17 @@ router.put("/:id", authenticateToken, async (req, res) => {
 // DELETE Chore (protected)
 router.delete("/:id", authenticateToken, async (req, res) => {
   const { id } = req.params;
+  const user_id = req.user?.userId;
 
   try {
     const doc = await firestore.collection("chores").doc(id).get();
     if (!doc.exists) {
       return res.status(404).json({ error: "Chore not found" });
+    }
+    
+    // Verify the chore belongs to the authenticated user
+    if (doc.data().user_id !== user_id) {
+      return res.status(403).json({ error: "Unauthorized access to chore" });
     }
 
     await firestore.collection("chores").doc(id).delete();

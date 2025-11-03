@@ -69,13 +69,18 @@ router.post("/signup", async (req, res) => {
     }
 
     const token = await signAsync(
-      { userId: result.id, email },
+      {
+        userId: result.id,
+        email,
+        name: null,
+        profilePicture: null,
+      },
       process.env.JWT_SECRET,
-      { expiresIn: "1d" }
+      { expiresIn: "7d" }
     );
     res
       .status(201)
-      .json({ message: "User created", userId: result.id, email, token });
+      .json({ message: "User created", token });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Signup failed" });
@@ -113,16 +118,19 @@ router.post("/login", async (req, res) => {
     }
 
     const token = await signAsync(
-      { userId: userDoc.id, email: user.email },
+      {
+        userId: userDoc.id,
+        name: user.name || null,
+        email: user.email,
+        profilePicture: user.profilePicture || null,
+      },
       process.env.JWT_SECRET,
-      { expiresIn: "1d" }
+      { expiresIn: "7d" }
     );
 
     res.json({
       message: "Login successful",
       token,
-      userId: userDoc.id,
-      name: user.name,
     });
   } catch (error) {
     console.error(error);
@@ -133,26 +141,125 @@ router.post("/login", async (req, res) => {
 // 🔹 Delete User (protected)
 router.delete("/delete_user", authenticateToken, async (req, res) => {
   try {
-    const { userId } = req.body;
+    const userId = req.user?.userId;
     if (!userId) return res.status(400).json({ error: "User ID required" });
 
-    const result = await firestore.collection("users").doc(userId).delete();
+    // Delete user document
+    await firestore.collection("users").doc(userId).delete();
+    
+    // Also delete user settings
+    await firestore.collection("user_settings").doc(userId).delete();
+    
+    // Delete all user's tasks
+    const tasksSnapshot = await firestore
+      .collection("tasks")
+      .where("user_id", "==", userId)
+      .get();
+    
+    const taskDeletePromises = tasksSnapshot.docs.map(doc => doc.ref.delete());
+    await Promise.all(taskDeletePromises);
+    
+    // Delete all user's chores
+    const choresSnapshot = await firestore
+      .collection("chores")
+      .where("user_id", "==", userId)
+      .get();
+    
+    const choreDeletePromises = choresSnapshot.docs.map(doc => doc.ref.delete());
+    await Promise.all(choreDeletePromises);
 
-    if (result) {
-      res.json({ message: "User deleted successfully" });
-    } else {
-      res.status(404).json({ error: "User not found" });
-    }
+    res.json({ message: "User and all associated data deleted successfully" });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to delete user" });
   }
 });
 
+// 🔹 Update User Profile (protected)
+router.put("/update_profile", authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) return res.status(400).json({ error: "User ID required" });
+
+    const { name, profilePicture } = req.body;
+
+    // Build update object with only provided fields
+    const updateData = {
+      updated_at: new Date(),
+    };
+
+    if (name !== undefined) updateData.name = name;
+
+    // Handle profile picture upload to Cloudinary
+    if (profilePicture !== undefined) {
+      try {
+        const cloudName = process.env.CLOUNDINARY_CLOUD_NAME;
+        if (!cloudName) {
+          return res
+            .status(500)
+            .json({ error: "Cloudinary configuration missing" });
+        }
+
+        // Upload to Cloudinary
+        const formData = new URLSearchParams();
+        formData.append("file", profilePicture);
+        formData.append("upload_preset", "ml_default"); // You may need to configure this in Cloudinary
+        console.log(cloudName);
+        const uploadResponse = await fetch(
+          `https://api.cloudinary.com/v1_1/${cloudName}/upload`,
+          {
+            method: "POST",
+            body: formData,
+          }
+        );
+
+        if (!uploadResponse.ok) {
+          throw new Error("Cloudinary upload failed");
+        }
+
+        const uploadData = await uploadResponse.json();
+        updateData.profilePicture = uploadData.secure_url;
+      } catch (uploadError) {
+        console.error("Cloudinary upload error:", uploadError);
+        return res
+          .status(500)
+          .json({ error: "Failed to upload profile picture" });
+      }
+    }
+
+    await firestore.collection("users").doc(userId).update(updateData);
+
+    // Get updated user data
+    const updatedUserDoc = await firestore.collection("users").doc(userId).get();
+    const updatedUser = updatedUserDoc.data();
+
+    // Generate new JWT with updated user data
+    const newToken = await signAsync(
+      {
+        userId: userId,
+        name: updatedUser.name || null,
+        email: updatedUser.email,
+        profilePicture: updatedUser.profilePicture || null,
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    res.json({
+      message: "Profile updated successfully",
+      token: newToken,
+      profilePicture: updateData.profilePicture,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to update profile" });
+  }
+});
+
 // 🔹 Get User Settings (protected)
 router.get("/get_user_settings", authenticateToken, async (req, res) => {
   try {
-    const userId = req.user?.userId || req.query.userId;
+    const userId = req.user?.userId;
     if (!userId) return res.status(400).json({ error: "User ID required" });
 
     const docRef = firestore.collection("user_settings").doc(userId);
@@ -179,15 +286,14 @@ router.get("/get_user_settings", authenticateToken, async (req, res) => {
 // 🔹 Update User Settings (protected)
 router.post("/update_user_settings", authenticateToken, async (req, res) => {
   try {
-    const {
-      userId: bodyUserId,
+    const userId = req.user?.userId;
+    if (!userId) return res.status(400).json({ error: "User ID required" });
 
+    const {
       pomodoro_duration,
       short_break_duration,
       long_break_duration,
     } = req.body;
-    const userId = bodyUserId || req.user?.userId;
-    if (!userId) return res.status(400).json({ error: "User ID required" });
 
     await firestore.collection("user_settings").doc(userId).set(
       {

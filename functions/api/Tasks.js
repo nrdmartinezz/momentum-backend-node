@@ -8,7 +8,9 @@ const router = express.Router();
 
 // CREATE Task
 router.post("/", authenticateToken, async (req, res) => {
-  const { user_id, title, description, status, due_date } = req.body;
+  console.log("Received task creation request:", req.body);
+  const user_id = req.user?.userId; // Get user ID from JWT token
+  const { title, description, status, due_date } = req.body;
   if (!user_id || !title) {
     return res.status(400).json({ error: "Missing required fields" });
   }
@@ -29,8 +31,9 @@ router.post("/", authenticateToken, async (req, res) => {
 });
 
 // READ All Tasks for a User
-router.get("/", async (req, res) => {
-  const { user_id } = req.query;
+router.get("/", authenticateToken, async (req, res) => {
+  console.log("Received request to fetch tasks for user");
+  const user_id = req.user?.userId;
   if (!user_id) return res.status(400).json({ error: "User ID required" });
 
   const tasks = await firestore
@@ -53,15 +56,23 @@ router.get("/", async (req, res) => {
 
 
 // READ Single Task by ID
-router.get("/:id", async (req, res) => {
+router.get("/:id", authenticateToken, async (req, res) => {
   const { id } = req.params;
+  const user_id = req.user?.userId;
 
   try {
     const task = await firestore.collection("tasks").doc(id).get();
     if (!task.exists) {
       return res.status(404).json({ error: "Task not found" });
     }
-    res.json({ id: task.id, ...task.data() });
+    
+    // Verify the task belongs to the authenticated user
+    const taskData = task.data();
+    if (taskData.user_id !== user_id) {
+      return res.status(403).json({ error: "Unauthorized access to task" });
+    }
+    
+    res.json({ id: task.id, ...taskData });
   } catch (error) {
     console.error("Error fetching task:", error);
     res.status(500).json({ error: "Failed to fetch task" });
@@ -71,9 +82,20 @@ router.get("/:id", async (req, res) => {
 // UPDATE Task (protected)
 router.put("/:id", authenticateToken, async (req, res) => {
   const { id } = req.params;
+  const user_id = req.user?.userId;
   const { title, description, status, due_date } = req.body;
 
   try {
+    // Verify the task belongs to the authenticated user
+    const task = await firestore.collection("tasks").doc(id).get();
+    if (!task.exists) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+    
+    if (task.data().user_id !== user_id) {
+      return res.status(403).json({ error: "Unauthorized access to task" });
+    }
+    
     await firestore.collection("tasks").doc(id).update({
       title,
       description,
@@ -90,8 +112,19 @@ router.put("/:id", authenticateToken, async (req, res) => {
 // DELETE Task (protected)
 router.delete("/:id", authenticateToken, async (req, res) => {
   const { id } = req.params;
+  const user_id = req.user?.userId;
 
   try {
+    // Verify the task belongs to the authenticated user
+    const task = await firestore.collection("tasks").doc(id).get();
+    if (!task.exists) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+    
+    if (task.data().user_id !== user_id) {
+      return res.status(403).json({ error: "Unauthorized access to task" });
+    }
+    
     await firestore.collection("tasks").doc(id).delete();
     res.json({ message: "Task deleted successfully" });
   } catch (error) {
