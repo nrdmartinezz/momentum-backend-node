@@ -2,7 +2,7 @@
   "name": "functions",
   "description": "Cloud Functions for Momentum Web App",
   "scripts": {
-  "serve": "firebase emulators:start --only functions,firestore",
+    "serve": "firebase emulators:start --only functions,firestore",
     "shell": "firebase functions:shell",
     "start": "npm run shell",
     "deploy": "firebase deploy --only functions",
@@ -14,6 +14,7 @@
   "main": "index.js",
   "dependencies": {
     "bcrypt": "^5.1.1",
+    "cloudinary": "^2.8.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",

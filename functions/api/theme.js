@@ -1,6 +1,8 @@
 const express = require("express");
 const firestore = require("../data/firestore");
 const authenticateToken = require("../middleware/authentication");
+const cloudinary = require("../config/cloudinary");
+require("dotenv").config();
 
 const router = express.Router();
 
@@ -17,7 +19,7 @@ router.get("/", authenticateToken, async (req, res) => {
       // Return default theme if none exists
       const defaultTheme = {
         accent_color: "#7E52B3",
-        primary_color: "#1a1a1a",
+        primary_color: "#ffffff",
         sound: "default",
         background_image: "https://res.cloudinary.com/ddsekdku7/image/upload/v1742144459/default-theme-login.jpg",
         created_at: new Date(),
@@ -52,12 +54,41 @@ router.post("/", authenticateToken, async (req, res) => {
 
     const themeData = {
       accent_color: accent_color || "#7E52B3",
-      primary_color: primary_color || "#1a1a1a",
+      primary_color: primary_color || "#ffffff",
       sound: sound || "default",
-      background_image: background_image || "https://res.cloudinary.com/ddsekdku7/image/upload/v1742144459/default-theme-login.jpg",
       created_at: new Date(),
       updated_at: new Date(),
     };
+
+    // Handle background image upload to Cloudinary if provided as base64
+    if (background_image && background_image.startsWith("data:")) {
+      try {
+        // Get user data for public_id
+        const userDoc = await firestore.collection("users").doc(userId).get();
+        const user = userDoc.data();
+
+        const publicId = `${user.name || userId}_background_image`;
+
+        // Upload to Cloudinary using SDK (automatically signs the request)
+        const uploadResult = await cloudinary.uploader.upload(background_image, {
+          public_id: publicId,
+          folder: "momentum/backgrounds",
+          overwrite: true,
+          resource_type: "auto",
+          transformation: [
+            { quality: "auto", fetch_format: "auto" }
+          ],
+        });
+        themeData.background_image = uploadResult.secure_url;
+      } catch (uploadError) {
+        console.error("Background upload error:", uploadError);
+        // Use default if upload fails
+        themeData.background_image = "https://res.cloudinary.com/ddsekdku7/image/upload/v1742144459/default-theme-login.jpg";
+      }
+    } else {
+      // Use provided URL or default
+      themeData.background_image = background_image || "https://res.cloudinary.com/ddsekdku7/image/upload/v1742144459/default-theme-login.jpg";
+    }
 
     await docRef.set(themeData);
 
@@ -93,7 +124,37 @@ router.post("/update", authenticateToken, async (req, res) => {
     if (accent_color !== undefined) updateData.accent_color = accent_color;
     if (primary_color !== undefined) updateData.primary_color = primary_color;
     if (sound !== undefined) updateData.sound = sound;
-    if (background_image !== undefined) updateData.background_image = background_image;
+    
+    // Handle background image upload to Cloudinary if provided as base64
+    if (background_image !== undefined) {
+      if (background_image.startsWith("data:")) {
+        try {
+          // Get user data for public_id
+          const userDoc = await firestore.collection("users").doc(userId).get();
+          const user = userDoc.data();
+
+          const publicId = `${user.name || userId}_background_image`;
+
+          // Upload to Cloudinary using SDK (automatically signs the request)
+          const uploadResult = await cloudinary.uploader.upload(background_image, {
+            public_id: publicId,
+            folder: "momentum/backgrounds",
+            overwrite: true,
+            resource_type: "auto",
+            transformation: [
+              { quality: "auto", fetch_format: "auto" }
+            ],
+          });
+          updateData.background_image = uploadResult.secure_url;
+        } catch (uploadError) {
+          console.error("Background upload error:", uploadError);
+          return res.status(500).json({ error: "Failed to upload background image" });
+        }
+      } else {
+        // Use provided URL directly
+        updateData.background_image = background_image;
+      }
+    }
 
     await firestore.collection("user_themes").doc(userId).set(
       updateData,

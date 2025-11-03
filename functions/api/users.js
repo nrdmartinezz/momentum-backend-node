@@ -5,6 +5,7 @@ const { promisify } = require("util");
 const firestore = require("../data/firestore");
 const { error } = require("firebase-functions/logger");
 const authenticateToken = require("../middleware/authentication");
+const cloudinary = require("../config/cloudinary");
 require("dotenv").config();
 
 const router = express.Router();
@@ -53,9 +54,9 @@ router.post("/signup", async (req, res) => {
     await firestore.collection("user_settings").doc(result.id).set(
       {
         theme_id: "default",
-        pomodoro_duration: 25,
-        short_break_duration: 5,
-        long_break_duration: 15,
+        pomodoro_duration: 1500, // 25 minutes in seconds
+        short_break_duration: 300, // 5 minutes in seconds
+        long_break_duration: 900, // 15 minutes in seconds
         created_at: new Date(),
         updated_at: new Date(),
       },
@@ -193,32 +194,31 @@ router.put("/update_profile", authenticateToken, async (req, res) => {
     // Handle profile picture upload to Cloudinary
     if (profilePicture !== undefined) {
       try {
-        const cloudName = process.env.CLOUNDINARY_CLOUD_NAME;
-        if (!cloudName) {
+        if (!process.env.CLOUDINARY_CLOUD_NAME) {
           return res
             .status(500)
             .json({ error: "Cloudinary configuration missing" });
         }
 
-        // Upload to Cloudinary
-        const formData = new URLSearchParams();
-        formData.append("file", profilePicture);
-        formData.append("upload_preset", "ml_default"); // You may need to configure this in Cloudinary
-        console.log(cloudName);
-        const uploadResponse = await fetch(
-          `https://api.cloudinary.com/v1_1/${cloudName}/upload`,
-          {
-            method: "POST",
-            body: formData,
-          }
-        );
+        // Get current user data for public_id
+        const userDoc = await firestore.collection("users").doc(userId).get();
+        const user = userDoc.data();
 
-        if (!uploadResponse.ok) {
-          throw new Error("Cloudinary upload failed");
-        }
+        const publicId = `${user.name || userId}_profile_picture`;
 
-        const uploadData = await uploadResponse.json();
-        updateData.profilePicture = uploadData.secure_url;
+        // Upload to Cloudinary using SDK (automatically signs the request)
+        const uploadResult = await cloudinary.uploader.upload(profilePicture, {
+          public_id: publicId,
+          folder: "momentum/profile-pictures",
+          overwrite: true,
+          resource_type: "auto",
+          transformation: [
+            { width: 300, height: 300, crop: "fill", gravity: "face" },
+            { quality: "auto", fetch_format: "auto" }
+          ],
+        });
+
+        updateData.profilePicture = uploadResult.secure_url;
       } catch (uploadError) {
         console.error("Cloudinary upload error:", uploadError);
         return res
@@ -266,9 +266,9 @@ router.get("/get_user_settings", authenticateToken, async (req, res) => {
     let settingsSnapshot = await docRef.get();
     if (!settingsSnapshot.exists) {
       const defaults = {
-        pomodoro_duration: 25,
-        short_break_duration: 5,
-        long_break_duration: 15,
+        pomodoro_duration: 1500, // 25 minutes in seconds
+        short_break_duration: 300, // 5 minutes in seconds
+        long_break_duration: 900, // 15 minutes in seconds
         created_at: new Date(),
         updated_at: new Date(),
       };
@@ -295,11 +295,26 @@ router.post("/update_user_settings", authenticateToken, async (req, res) => {
       long_break_duration,
     } = req.body;
 
+    // Validate that durations are positive integers (in seconds)
+    const validateDuration = (duration) => {
+      const parsed = parseInt(duration, 10);
+      return !isNaN(parsed) && parsed > 0 ? parsed : null;
+    };
+
+    const pomoSeconds = validateDuration(pomodoro_duration);
+    const shortSeconds = validateDuration(short_break_duration);
+    const longSeconds = validateDuration(long_break_duration);
+
+    if (!pomoSeconds || !shortSeconds || !longSeconds) {
+      return res.status(400).json({ error: "Invalid duration values" });
+    }
+
+    // Store durations in seconds for exact precision
     await firestore.collection("user_settings").doc(userId).set(
       {
-        pomodoro_duration,
-        short_break_duration,
-        long_break_duration,
+        pomodoro_duration: pomoSeconds,
+        short_break_duration: shortSeconds,
+        long_break_duration: longSeconds,
         updated_at: new Date(),
       },
       { merge: true }
